@@ -41,7 +41,7 @@ export default function TabTwoScreen() {
         <ThemedView style={styles.titleContainer}>
           <ThemedText type="subtitle">Explore</ThemedText>
           <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
+            Explore the sample screens and learn how AutoWala fits together.
           </ThemedText>
 
           <ExternalLink href="https://docs.expo.dev" asChild>

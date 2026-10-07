@@ -1,0 +1,12 @@
+{
+  "name": "autowala-payment-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test:signature": "node src/paymentVerification.test.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.109.0"
+  }
+}

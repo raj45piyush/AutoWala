@@ -1,98 +1,177 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
+import {
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { testSupabaseConnection } from '../../lib/supabase-test';
+import { useAuth } from '../../components/AuthProvider';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+export default function WelcomeScreen() {
+  const router = useRouter();
+  const { account, isLoading } = useAuth();
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+  useEffect(() => {
+    testSupabaseConnection();
+  }, []);
+
+  useEffect(() => {
+    if (isLoading || !account) {
+      return;
+    }
+
+    if (account.profile.role === 'admin') {
+      router.replace('/admin');
+    } else if (account.profile.role === 'rider') {
+      router.replace('/rider-home');
+    } else {
+      router.replace('/user-home');
+    }
+  }, [account, isLoading, router]);
+
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
 
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+        {/* Logo */}
+        <View style={styles.logoCircle}>
+          <Text style={styles.logo}>🛺</Text>
+        </View>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+        {/* App Name */}
+        <Text style={styles.title}>AutoWala</Text>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+        <Text style={styles.subtitle}>
+          Village Auto & Toto Sharing
+        </Text>
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        {/* Description */}
+        <View style={styles.infoBox}>
+          <Text style={styles.infoTitle}>
+            Easy. Local. Affordable.
+          </Text>
+
+          <Text style={styles.infoText}>
+            Book an Auto or Toto easily from your village
+            and travel together with nearby passengers.
+          </Text>
+        </View>
+
+        {/* Continue Button */}
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => router.push('/choose-role')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.buttonText}>Continue</Text>
+          <Text style={styles.arrow}>→</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.footer}>
+          Safe rides for your village
+        </Text>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+    backgroundColor: '#F7F9FC',
   },
-  safeArea: {
+
+  content: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+    paddingHorizontal: 25,
   },
+
+  logoCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#E8F5E9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 22,
+  },
+
+  logo: {
+    fontSize: 65,
+  },
+
   title: {
-    textAlign: 'center',
+    fontSize: 38,
+    fontWeight: '800',
+    color: '#1B1B1B',
+    marginBottom: 5,
   },
-  code: {
-    textTransform: 'uppercase',
+
+  subtitle: {
+    fontSize: 16,
+    color: '#666666',
+    marginBottom: 35,
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+
+  infoBox: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 22,
+    marginBottom: 30,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+
+  infoTitle: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: '#222222',
+    marginBottom: 8,
+  },
+
+  infoText: {
+    fontSize: 15,
+    lineHeight: 23,
+    color: '#666666',
+  },
+
+  button: {
+    width: '100%',
+    height: 58,
+    borderRadius: 16,
+    backgroundColor: '#2E7D32',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+
+  arrow: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    marginLeft: 12,
+  },
+
+  footer: {
+    fontSize: 13,
+    color: '#888888',
   },
 });
