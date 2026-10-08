@@ -13,6 +13,9 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_ROUTING_API_URL": "http://10.20.135.243:8787"
+      },
       "android": {
         "buildType": "apk"
       }
