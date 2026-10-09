@@ -2,6 +2,9 @@
   "name": "autowala-payment-server",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/index.mjs",
     "test:signature": "node src/paymentVerification.test.mjs"

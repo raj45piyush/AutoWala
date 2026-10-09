@@ -14,14 +14,17 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_ROUTING_API_URL": "http://10.20.135.243:8787"
+        "EXPO_PUBLIC_ROUTING_API_URL": "https://autowala-routing-api-acbde20a.onrender.com"
       },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_ROUTING_API_URL": "https://autowala-routing-api-acbde20a.onrender.com"
+      }
     }
   },
   "submit": {

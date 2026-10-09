@@ -86,6 +86,9 @@ async function computeRoadRoute(request, config) {
   };
 
   let response;
+  let payload = null;
+  const controller = new AbortController();
+  const routingTimeout = setTimeout(() => controller.abort(), 25_000);
   try {
     response = await fetch('https://api.heigit.org/openrouteservice/v2/directions/driving-car', {
       method: 'POST',
@@ -102,17 +105,24 @@ async function computeRoadRoute(request, config) {
         instructions: false,
         geometry: true,
       }),
+      signal: controller.signal,
     });
-  } catch {
+    try {
+      payload = await response.json();
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      payload = null;
+    }
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new HttpError(504, 'OpenRouteService took too long to respond. Please retry the route.');
+    }
+    console.warn('[AutoWala routing] OpenRouteService request failed:', error instanceof Error ? error.message : 'network error');
     throw new HttpError(502, 'Road routing could not be reached. Please try again.');
+  } finally {
+    clearTimeout(routingTimeout);
   }
 
-  let payload = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
   if (!response.ok) {
     console.warn(`[AutoWala routing] OpenRouteService returned HTTP ${response.status}.`);
     if (response.status === 401 || response.status === 403) {
@@ -717,7 +727,7 @@ async function handleRequest(request, response) {
   sendJson(response, 404, { error: 'Not found.' });
 }
 
-const port = Number(process.env.PAYMENT_SERVER_PORT ?? 8787);
+const port = Number(process.env.PORT || process.env.PAYMENT_SERVER_PORT || 8787);
 const server = http.createServer((request, response) => {
   void handleRequest(request, response).catch((error) => sendError(response, error));
 });

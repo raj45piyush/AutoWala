@@ -252,10 +252,11 @@ export default function BookRideScreen() {
       setIsResolvingPickupAddress(true);
 
       let address = '';
+      let addressLookupError = '';
       try {
         address = await reverseGeocodePhoton(coordinates);
-      } catch {
-        // A valid GPS coordinate is still usable when address lookup is unavailable.
+      } catch (error) {
+        addressLookupError = getErrorMessage(error, 'Address lookup failed.');
       }
       if (!isMountedRef.current) return;
 
@@ -264,7 +265,7 @@ export default function BookRideScreen() {
         setLocationError('');
       } else {
         setPickup('Current Location');
-        setLocationError('Pickup address unavailable. Using Current Location.');
+        setLocationError(`${addressLookupError || 'No address was found for this location.'} GPS coordinates are saved; retry address lookup when connected.`);
       }
     } catch {
       if (isMountedRef.current) {
@@ -275,6 +276,31 @@ export default function BookRideScreen() {
         setIsLocating(false);
         setIsResolvingPickupAddress(false);
       }
+    }
+  };
+
+  const handleRetryPickupAddress = async () => {
+    if (!pickupCoordinates) {
+      setLocationError('Select your GPS location again before retrying address lookup.');
+      return;
+    }
+
+    setIsResolvingPickupAddress(true);
+    try {
+      const address = await reverseGeocodePhoton(pickupCoordinates);
+      if (!isMountedRef.current) return;
+      if (address.trim()) {
+        setPickup(address.trim());
+        setLocationError('');
+      } else {
+        setLocationError('No address was found for this location. GPS coordinates are still saved; you can retry address lookup.');
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        setLocationError(`${getErrorMessage(error, 'Address lookup failed.')} GPS coordinates are still saved; retry address lookup when connected.`);
+      }
+    } finally {
+      if (isMountedRef.current) setIsResolvingPickupAddress(false);
     }
   };
 
@@ -366,6 +392,20 @@ export default function BookRideScreen() {
         return;
       }
 
+      requestStage = 'refreshing_nearby_riders';
+      const dispatchTargets = await findNearbyRiders(
+        pickupCoordinates.latitude,
+        pickupCoordinates.longitude,
+        vehiclePreference,
+        radiusKm
+      );
+      setNearbyRiders(dispatchTargets);
+      setHasSearched(true);
+      if (dispatchTargets.length === 0) {
+        setSearchError('No nearby rider is available now. Search again in a moment.');
+        return;
+      }
+
       requestStage = 'creating_ride';
       ride = await createRide({
         pickupAddress: pickup,
@@ -388,17 +428,18 @@ export default function BookRideScreen() {
       }
 
       requestStage = 'sending_request';
-      const dispatchTargets = nearbyRiders;
-      if (dispatchTargets.length === 0) {
-        setRequestedRideId(ride.id);
-        setRequestMessage('Your ride request is already with nearby riders. Check its status in Current Ride.');
-        return;
-      }
       const dispatchResults = await Promise.allSettled(dispatchTargets.map((candidate) =>
         sendRideRequest(ride!.id, candidate.user_id, candidate.distance_km, radiusKm)
       ));
       const sentCount = dispatchResults.filter((result) => result.status === 'fulfilled').length;
       if (sentCount === 0) {
+        if (__DEV__) {
+          console.warn('[AutoWala ride dispatch failures]', dispatchResults.flatMap((result, index) =>
+            result.status === 'rejected'
+              ? [{ riderId: dispatchTargets[index]?.user_id, message: getErrorMessage(result.reason, 'Unknown dispatch error') }]
+              : []
+          ));
+        }
         const failed = dispatchResults.find((result) => result.status === 'rejected');
         throw failed?.status === 'rejected' ? failed.reason : new Error('No rider request could be sent.');
       }
@@ -423,6 +464,7 @@ export default function BookRideScreen() {
           passengerId: ride?.passenger_id ?? account?.user.id ?? null,
           riderId: nearbyRiders[0]?.user_id ?? null,
           status: ride?.status ?? 'not_created',
+          message: getErrorMessage(error, 'Unknown booking error'),
         });
       }
       if (newlyCreatedRideId) await cancelRide(newlyCreatedRideId).catch(() => undefined);
@@ -490,6 +532,16 @@ export default function BookRideScreen() {
               </TouchableOpacity>
               {pickupCoordinates ? <Text style={styles.selectedHint}>✓ GPS pickup selected</Text> : null}
               {locationError ? <Text accessibilityRole="alert" style={styles.errorText}>{locationError}</Text> : null}
+              {locationError && pickupCoordinates ? (
+                <TouchableOpacity
+                  style={styles.retryAddressButton}
+                  onPress={() => void handleRetryPickupAddress()}
+                  disabled={isResolvingPickupAddress}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.retryAddressText}>{isResolvingPickupAddress ? 'Retrying address lookup…' : 'Retry address lookup'}</Text>
+                </TouchableOpacity>
+              ) : null}
 
               <Text style={styles.label}>Where do you want to go?</Text>
               <TextInput
@@ -721,6 +773,8 @@ const styles = StyleSheet.create({
   locationButton: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 10 },
   locationIcon: { fontSize: 17 },
   locationButtonText: { color: '#2E7D32', fontSize: 14, fontWeight: '700' },
+  retryAddressButton: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 12 },
+  retryAddressText: { color: '#2E7D32', fontSize: 13, fontWeight: '700' },
   selectedHint: { color: '#28783B', fontSize: 12, fontWeight: '600', marginTop: 3 },
   helperText: { color: '#777', fontSize: 12, marginTop: 5 },
   errorText: { color: '#B3261E', fontSize: 13, lineHeight: 18, marginTop: 6 },

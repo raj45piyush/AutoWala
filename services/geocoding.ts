@@ -11,6 +11,8 @@ export interface LocationSuggestion {
   coordinates: Coordinates;
 }
 
+const PHOTON_REQUEST_TIMEOUT_MS = 12_000;
+
 interface PhotonProperties {
   name?: string;
   housenumber?: string;
@@ -97,17 +99,33 @@ function createPhotonUrl(path: '/api/' | '/reverse', params: URLSearchParams) {
 
 async function fetchPhoton(url: string, signal?: AbortSignal): Promise<PhotonFeatureCollection> {
   let response: Response;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, PHOTON_REQUEST_TIMEOUT_MS);
+  const abortFromCaller = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  else signal?.addEventListener('abort', abortFromCaller, { once: true });
+
   try {
     response = await fetch(url, {
       headers: { Accept: 'application/json' },
-      signal,
+      signal: controller.signal,
     });
   } catch (error) {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortFromCaller);
+    if (signal?.aborted && error instanceof Error && error.name === 'AbortError') throw error;
+    if (timedOut) throw new Error('Location request timed out. Check your connection and try again.');
     if (error instanceof Error && error.name === 'AbortError') throw error;
     throw new Error('Location search is unavailable. Check your connection and try again.');
   }
 
   if (!response.ok) {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortFromCaller);
     if (process.env.NODE_ENV !== 'production') {
       console.warn(`[Photon] Location request failed (HTTP ${response.status}).`);
     }
@@ -117,7 +135,13 @@ async function fetchPhoton(url: string, signal?: AbortSignal): Promise<PhotonFea
   try {
     return await response.json() as PhotonFeatureCollection;
   } catch {
+    if (timedOut) {
+      throw new Error('Location request timed out. Check your connection and try again.');
+    }
     throw new Error('Location search returned an unreadable response. Please try again.');
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 

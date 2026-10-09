@@ -30,16 +30,32 @@ export interface CreateRideInput {
 const RIDE_PUBLIC_COLUMNS = 'id,passenger_id,rider_id,pickup_address,destination_address,pickup_latitude,pickup_longitude,destination_latitude,destination_longitude,passenger_count,vehicle_preference,estimated_distance_km,estimated_fare,final_fare,status,booking_code_expires_at,accepted_at,arrived_at,picked_up_at,in_progress_at,completed_at,cancelled_at,created_at,updated_at';
 
 function getFriendlyRideError(error: unknown) {
+  const errorRecord = typeof error === 'object' && error !== null
+    ? error as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown }
+    : null;
   const message = error instanceof Error
     ? error.message
-    : typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string'
-      ? error.message
+    : typeof errorRecord?.message === 'string'
+      ? errorRecord.message
       : '';
   const normalized = message.toLowerCase();
+  if (__DEV__ && message) {
+    console.error('[AutoWala ride backend error]', {
+      message,
+      code: errorRecord?.code,
+      details: errorRecord?.details,
+      hint: errorRecord?.hint,
+    });
+  }
+  if (__DEV__ && message) return message;
   if (normalized.includes('invalid pickup code')) return 'Invalid pickup code. Check the code and try again.';
   if (normalized.includes('expired or locked') || normalized.includes('code expired')) return 'This pickup code has expired. Contact support for help.';
   if (normalized.includes('already accepted') || normalized.includes('already been accepted') || normalized.includes('already accepted by another rider')) return 'Ride already accepted by another rider.';
   if (normalized.includes('already have an active ride')) return 'You already have an active ride. Finish or cancel it before booking another.';
+  if (normalized.includes('rider is not available for this request')) return 'Nearby riders are no longer available. Search again to refresh the rider list.';
+  if (normalized.includes('ride is no longer requesting riders')) return 'This ride is no longer accepting requests. Check Current Ride for its latest status.';
+  if (normalized.includes('authentication required')) return 'Your session expired. Please log in again.';
+  if (normalized.includes('ride not found')) return 'Could not find this ride request. Refresh and try again.';
   if (normalized.includes('not approved') || normalized.includes('approved online rider')) return 'Your rider account must be approved and online to accept rides.';
   if (normalized.includes('invalid input value for enum') || normalized.includes('ride_status')) return 'Ride updates are temporarily unavailable. Please try again shortly.';
   if (normalized.includes('network') || normalized.includes('fetch') || normalized.includes('timeout')) return 'Connection lost. Check your internet and try again.';
@@ -320,9 +336,16 @@ export async function requestNearbyRiders(
   radiusKm = 10
 ) {
   const riders = await findNearbyRiders(latitude, longitude, 'any', radiusKm);
-  const requests = await Promise.all(
+  const results = await Promise.allSettled(
     riders.map((rider) => sendRideRequest(rideId, rider.user_id, rider.distance_km, radiusKm))
   );
+  const requests = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+
+  if (riders.length > 0 && requests.length === 0) {
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
+    throw new Error('No rider request could be sent.');
+  }
 
   return { riders, requests };
 }
