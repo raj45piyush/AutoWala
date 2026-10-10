@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { Complaint, Profile, Rider, RiderApprovalStatus, Ride } from '../types/database';
+import { getRiderApprovalUpdate } from './riderApproval.mjs';
 
 export interface AdminStats {
   users: number;
@@ -155,10 +156,13 @@ export async function getAdminUsers() {
   return (data ?? []) as Profile[];
 }
 
-export async function updateRiderApproval(userId: string, approvalStatus: RiderApprovalStatus) {
+export async function updateRiderApproval(
+  userId: string,
+  approvalStatus: Extract<RiderApprovalStatus, 'approved' | 'rejected'>
+) {
   const { data, error } = await supabase
     .from('riders')
-    .update({ approval_status: approvalStatus, is_online: false })
+    .update(getRiderApprovalUpdate(approvalStatus))
     .eq('user_id', userId)
     .select('*')
     .single();

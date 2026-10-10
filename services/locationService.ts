@@ -2,23 +2,12 @@ import * as Location from 'expo-location';
 import { Platform } from 'react-native';
 
 import { reverseGeocodePhoton } from './geocoding';
+import { isValidCoordinates as isValidCoordinateObject } from './riderApproval.mjs';
 
 export type Coordinates = {
   latitude: number;
   longitude: number;
 };
-
-function isValidCoordinates(value: unknown): value is Coordinates {
-  if (typeof value !== 'object' || value === null) return false;
-
-  const coordinates = value as Partial<Coordinates>;
-  return typeof coordinates.latitude === 'number' &&
-    Number.isFinite(coordinates.latitude) &&
-    coordinates.latitude >= -90 && coordinates.latitude <= 90 &&
-    typeof coordinates.longitude === 'number' &&
-    Number.isFinite(coordinates.longitude) &&
-    coordinates.longitude >= -180 && coordinates.longitude <= 180;
-}
 
 export class LocationServiceError extends Error {
   constructor(message: string) {
@@ -102,7 +91,7 @@ export async function getCurrentLocation() {
 export async function getCurrentCoordinates(): Promise<Coordinates> {
   const location = await getCurrentLocation();
   const coordinates = location?.coords;
-  if (!isValidCoordinates(coordinates)) {
+  if (!isValidCoordinateObject(coordinates)) {
     throw new LocationServiceError('Unable to get a valid current location.');
   }
 

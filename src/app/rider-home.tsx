@@ -17,6 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { getRiderEarningsSummary } from '../../services/earningsService';
 import { getFriendlyAuthError } from '../../services/authService';
 import { getCurrentCoordinates, watchCurrentLocation } from '../../services/locationService';
+import { isValidCoordinatePair } from '../../services/riderApproval.mjs';
 import {
   acceptRideRpc,
   getRiderRideRequestsWithRides,
@@ -36,6 +37,7 @@ export default function RiderHomeScreen() {
   const requestRefreshRef = useRef(0);
   const riderId = account?.profile.role === 'rider' ? account.rider?.user_id ?? null : null;
   const riderIsOnline = account?.profile.role === 'rider' && account.rider?.is_online === true;
+  const riderApprovalStatus = account?.profile.role === 'rider' ? account.rider?.approval_status ?? null : null;
 
 
   useEffect(() => {
@@ -80,6 +82,12 @@ export default function RiderHomeScreen() {
     const fallback = setInterval(() => void refreshRequests(), 20000);
     return () => clearInterval(fallback);
   }, [refreshRequests, riderId, riderIsOnline]);
+
+  useEffect(() => {
+    if (!riderId || (riderApprovalStatus !== 'pending' && riderApprovalStatus !== null)) return;
+    const refreshTimer = setInterval(() => void refreshAccount(), 15000);
+    return () => clearInterval(refreshTimer);
+  }, [refreshAccount, riderApprovalStatus, riderId]);
 
   useEffect(() => {
     if (!riderId) return;
@@ -184,7 +192,7 @@ export default function RiderHomeScreen() {
   const earnings = earningsSummary?.todayEarnings ?? 0;
 
   const handleOnlineChange = async (nextValue: boolean) => {
-    if (rider.approval_status !== 'approved') {
+    if (riderApprovalStatus !== 'approved') {
       Alert.alert('Approval Required', 'Your account is waiting for admin approval.');
       return;
     }
@@ -256,17 +264,17 @@ export default function RiderHomeScreen() {
           <Text style={styles.infoLabel}>Vehicle</Text>
           <Text style={styles.vehicleTitle}>{rider.vehicle_type.toUpperCase()}</Text>
           <Text style={styles.vehicleNumber}>{rider.vehicle_number || 'Vehicle number pending'}</Text>
-          <Text style={styles.statusText}>Approval: {rider.approval_status ?? 'pending review'}</Text>
+          <Text style={styles.statusText}>Approval: {riderApprovalStatus ?? 'pending review'}</Text>
           <Text style={styles.statusText}>
-            Location: {rider.current_latitude !== null && rider.current_longitude !== null ? 'Available' : 'Not shared'}
+            Location: {isValidCoordinatePair(rider.current_latitude, rider.current_longitude) ? 'Available' : 'Not shared'}
           </Text>
         </View>
 
-        {rider.approval_status !== 'approved' ? (
+        {riderApprovalStatus !== 'approved' ? (
           <View style={styles.pendingCard}>
             <Text style={styles.pendingTitle}>Your account is waiting for admin approval.</Text>
             <Text style={styles.pendingText}>
-              You can update your profile while documents are being reviewed.
+              You can update your profile while documents are being reviewed. Location sharing becomes available after approval.
             </Text>
           </View>
         ) : (

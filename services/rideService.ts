@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { isValidCoordinatePair } from './riderApproval.mjs';
 import type {
   NearbyRider,
   Ride,
@@ -501,6 +502,10 @@ export async function setRiderOnline(isOnline: boolean) {
 }
 
 export async function updateRiderLocation(latitude: number, longitude: number) {
+  if (!isValidCoordinatePair(latitude, longitude)) {
+    throw new Error('A valid GPS coordinate pair is required to share rider location.');
+  }
+
   const { data, error } = await supabase.rpc('update_rider_location', {
     p_latitude: latitude,
     p_longitude: longitude,

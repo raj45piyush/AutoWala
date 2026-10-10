@@ -15,6 +15,7 @@ import {
 
 import { useAuth } from '../../components/AuthProvider';
 import { getFriendlyAuthError } from '../../services/authService';
+import { getPendingRiderRows } from '../../services/riderApproval.mjs';
 import { createPrivateDocumentUrl, listRiderDocuments, type RiderDocument } from '../../services/documentService';
 import {
   getAdminComplaints,
@@ -71,6 +72,8 @@ export default function AdminScreen() {
   const [section, setSection] = useState<AdminSection>('overview');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [riders, setRiders] = useState<AdminRiderRow[]>([]);
+  const [hasLoadedRiders, setHasLoadedRiders] = useState(false);
+  const [ridersLoadError, setRidersLoadError] = useState<string | null>(null);
   const [users, setUsers] = useState<Profile[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [rides, setRides] = useState<Ride[]>([]);
@@ -98,8 +101,7 @@ export default function AdminScreen() {
 
   const loadDashboard = useCallback(async () => {
     setErrorMessage(null);
-    try {
-      const [nextStats, nextRiders, nextUsers, nextRides, nextPayments, nextComplaints, nextProfiles, nextEarnings, nextFareConfig] = await Promise.all([
+    const results = await Promise.allSettled([
         getAdminStats(),
         getAdminRiders(),
         getAdminUsers(),
@@ -109,27 +111,62 @@ export default function AdminScreen() {
         getAdminProfiles(),
         getAdminRiderEarnings(),
         getFareConfig(),
-      ]);
-      setStats(nextStats);
-      setRiders(nextRiders);
-      setUsers(nextUsers);
-      setRides(nextRides);
-      setPayments(nextPayments as Payment[]);
-      setEarnings(nextEarnings);
-      setFareConfig(nextFareConfig);
+    ] as const);
+    const failures: string[] = [];
+    const applyResult = <T,>(
+      result: PromiseSettledResult<T>,
+      label: string,
+      onSuccess: (value: T) => void
+    ) => {
+      if (result.status === 'fulfilled') {
+        onSuccess(result.value);
+      } else {
+        const message = getFriendlyAuthError(result.reason);
+        failures.push(`${label}: ${message}`);
+        if (label === 'rider applications') {
+          setRidersLoadError(message);
+          setHasLoadedRiders(true);
+        }
+      }
+    };
+
+    applyResult(results[0], 'admin statistics', setStats);
+    applyResult(results[1], 'rider applications', (value) => {
+      setRiders(value);
+      setRidersLoadError(null);
+      setHasLoadedRiders(true);
+    });
+    applyResult(results[2], 'users', setUsers);
+    applyResult(results[3], 'rides', setRides);
+    applyResult(results[4], 'payments', (value) => setPayments(value as Payment[]));
+    applyResult(results[5], 'support requests', setComplaints);
+    applyResult(results[6], 'profiles', setProfiles);
+    applyResult(results[7], 'rider earnings', setEarnings);
+    applyResult(results[8], 'fare settings', (value) => {
+      setFareConfig(value);
       setFareFields({
-        baseFare: String(nextFareConfig.baseFare),
-        perKmRate: String(nextFareConfig.perKmRate),
-        minimumFare: String(nextFareConfig.minimumFare),
-        platformFee: String(nextFareConfig.platformFee),
-        tax: String(nextFareConfig.tax),
+        baseFare: String(value.baseFare),
+        perKmRate: String(value.perKmRate),
+        minimumFare: String(value.minimumFare),
+        platformFee: String(value.platformFee),
+        tax: String(value.tax),
       });
-      setComplaints(nextComplaints);
-      setProfiles(nextProfiles);
+    });
+    setErrorMessage(failures.length > 0 ? failures.join(' · ') : null);
+    setIsRefreshing(false);
+  }, []);
+
+  const refreshRiderApplications = useCallback(async () => {
+    try {
+      const nextRiders = await getAdminRiders();
+      setRiders(nextRiders);
+      setRidersLoadError(null);
+      setHasLoadedRiders(true);
     } catch (loadError) {
-      setErrorMessage(getFriendlyAuthError(loadError));
-    } finally {
-      setIsRefreshing(false);
+      const message = getFriendlyAuthError(loadError);
+      setRidersLoadError(message);
+      setHasLoadedRiders(true);
+      setErrorMessage(`Could not load rider applications: ${message}`);
     }
   }, []);
 
@@ -157,9 +194,19 @@ export default function AdminScreen() {
     }
   }, [account, refresh]);
 
+  useEffect(() => {
+    if (account?.profile.role !== 'admin' || section !== 'approvals') return;
+    const initialRefresh = setTimeout(() => void refreshRiderApplications(), 0);
+    const refreshTimer = setInterval(() => void refreshRiderApplications(), 15000);
+    return () => {
+      clearTimeout(initialRefresh);
+      clearInterval(refreshTimer);
+    };
+  }, [account?.profile.role, refreshRiderApplications, section]);
+
   const profileById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
   const selectedUser = users.find((user) => user.id === selectedUserId) ?? null;
-  const pendingRiders = riders.filter(({ rider }) => rider.approval_status === 'pending' || rider.approval_status === null);
+  const pendingRiders = getPendingRiderRows(riders);
   const visibleUsers = users.filter((user) => {
     const query = search.trim().toLowerCase();
     return !query || [user.full_name, user.email, user.phone].some((value) => value?.toLowerCase().includes(query));
@@ -400,7 +447,10 @@ export default function AdminScreen() {
                 <View style={styles.dashboardColumns}>
                   <View style={panelStyle}>
                     <PanelHeading title="Pending rider approvals" subtitle="Applications that need a decision" actionLabel="View all" onAction={() => setSection('approvals')} />
-                    {pendingRiders.length === 0 ? <Text style={styles.emptyText}>All caught up. No pending applications.</Text> : pendingRiders.slice(0, 5).map(renderRiderCard)}
+                    {ridersLoadError ? <Text accessibilityRole="alert" style={styles.alertError}>Could not load pending rider applications: {ridersLoadError}</Text> : null}
+                    {!ridersLoadError && !hasLoadedRiders ? <Text style={styles.emptyText}>Loading rider applications…</Text> : null}
+                    {!ridersLoadError && hasLoadedRiders && pendingRiders.length === 0 ? <Text style={styles.emptyText}>All caught up. No pending applications.</Text> : null}
+                    {pendingRiders.slice(0, 5).map(renderRiderCard)}
                   </View>
                   <View style={panelStyle}>
                     <PanelHeading title="Recent rides" subtitle="Latest activity across your network" actionLabel="View rides" onAction={() => setSection('rides')} />
@@ -431,10 +481,12 @@ export default function AdminScreen() {
 
             {section === 'riders' || section === 'approvals' ? (
               <View style={panelStyle}>
-                <PanelHeading title={section === 'approvals' ? 'Pending rider approvals' : 'Rider management'} subtitle={section === 'approvals' ? `${pendingRiders.length} applications awaiting review` : `${riders.length} registered riders`} />
+                <PanelHeading title={section === 'approvals' ? 'Pending rider approvals' : 'Rider management'} subtitle={section === 'approvals' ? (ridersLoadError ? 'Applications could not be loaded' : hasLoadedRiders ? `${pendingRiders.length} applications awaiting review` : 'Loading applications…') : `${riders.length} registered riders`} />
                 <SearchBox value={search} onChangeText={setSearch} placeholder="Search rider, vehicle or phone" />
+                {section === 'approvals' && ridersLoadError ? <Text accessibilityRole="alert" style={styles.alertError}>Could not load pending rider applications: {ridersLoadError}</Text> : null}
                 {(section === 'approvals' ? pendingRiders : visibleRiders).map(renderRiderCard)}
-                {(section === 'approvals' ? pendingRiders : visibleRiders).length === 0 ? <Text style={styles.emptyText}>{section === 'approvals' ? 'No pending rider applications.' : 'No riders match that search.'}</Text> : null}
+                {(section === 'approvals' ? pendingRiders : visibleRiders).length === 0 && !(section === 'approvals' && ridersLoadError) && (section !== 'approvals' || hasLoadedRiders) ? <Text style={styles.emptyText}>{section === 'approvals' ? 'No pending rider applications.' : 'No riders match that search.'}</Text> : null}
+                {section === 'approvals' && !hasLoadedRiders && !ridersLoadError ? <Text style={styles.emptyText}>Loading rider applications…</Text> : null}
               </View>
             ) : null}
 

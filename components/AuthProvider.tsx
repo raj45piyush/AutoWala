@@ -37,7 +37,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const nextAccount = await getCurrentAccount();
       setAccount(nextAccount);
     } catch (refreshError) {
-      setAccount(null);
+      // Keep a valid signed-in account available during temporary network errors.
       setError(getFriendlyAuthError(refreshError));
     } finally {
       setIsLoading(false);
